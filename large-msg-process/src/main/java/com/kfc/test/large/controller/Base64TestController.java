@@ -19,7 +19,7 @@ public class Base64TestController {
 
     @RequestMapping(value = "/test",method = {RequestMethod.POST, RequestMethod.GET})
     public void test(String str) throws Exception {
-        log.info("[往MQ发送报文]{}", str);
+        log.info("[base64 test]{}", str);
     }
 
 

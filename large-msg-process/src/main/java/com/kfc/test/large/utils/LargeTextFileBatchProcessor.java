@@ -1,6 +1,11 @@
 package com.kfc.test.large.utils;
 
+import com.kfc.test.large.file.model.Person;
+import com.kfc.test.large.file.model.Person614;
+import com.kfc.test.large.file.parse.FixedByteLengthFileParser;
+import com.kfc.test.large.file.parse.FixedLengthFileWriter;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -19,7 +24,7 @@ public class LargeTextFileBatchProcessor {
     /**
      * 缓冲区大小
      */
-    private static final int BUFFER_SIZE = 256;
+    private static final int BUFFER_SIZE = 32 * 1024;
 
     /**
      * 逐块处理大文本文件
@@ -29,7 +34,7 @@ public class LargeTextFileBatchProcessor {
      * @param delimiter       分隔符
      * @throws IOException 如果读取文件时发生错误
      */
-    public static void processFile(String filePath, Charset charset, RecordProcessor recordProcessor, String delimiter) throws IOException {
+    public static void processFile(String filePath, Charset charset, String delimiter, RecordProcessor recordProcessor) throws IOException {
         try (BufferedReader reader = new BufferedReader(new FileReader(filePath, charset))) {
             // 可以根据需要调整缓冲区大小
             char[] buffer = new char[BUFFER_SIZE];
@@ -45,7 +50,10 @@ public class LargeTextFileBatchProcessor {
                     String[] records = currentContent.split(Pattern.quote(delimiter));
                     for (int i = 0; i < records.length - 1; i++) {
                         // 处理每个分割后的记录
-                        recordProcessor.processRecord(records[i]);
+                        if(StringUtils.isNotEmpty(records[i])){
+                            recordProcessor.processRecord(records[i]);
+                        }
+
 
                         // 更新当前块，移除已经处理的部分
                         currentChunk.delete(0, records[i].length());
@@ -58,7 +66,9 @@ public class LargeTextFileBatchProcessor {
             if (!currentContent.isEmpty()) {
                 String[] records = currentContent.split(delimiter);
                 for (int i = 0; i < records.length; i++) {
-                    recordProcessor.processRecord(records[i]);
+                    if(StringUtils.isNotEmpty(records[i])){
+                        recordProcessor.processRecord(records[i]);
+                    }
                 }
             }
         }
@@ -77,36 +87,51 @@ public class LargeTextFileBatchProcessor {
         String delimiter = ":LST:"; // 分隔符
 
         String resultFilePath = filePath + ".result";
+        String parseResultFilePath = filePath + ".result.parse";
+        String parseResultWriteFilePath = filePath + ".result.parse.write";
+
         String charset = "GBK";
         Charset charset1 = Charset.forName(charset);
 
         File oriFile = new File(filePath);
         File resultFile = new File(resultFilePath);
+        File parseResultFile = new File(parseResultFilePath);
+        File parseResultWriteFile = new File(parseResultWriteFilePath);
 
         try {
 
             FileUtils.deleteQuietly(resultFile);
+            FileUtils.deleteQuietly(parseResultFile);
+            FileUtils.deleteQuietly(parseResultWriteFile);
             AtomicInteger i = new AtomicInteger();
-            processFile(filePath, charset1, record -> {
+            processFile(filePath, charset1, delimiter, record -> {
                 // 在这里处理每条记录
 
                 try {
-                    if(i.get() > 0){
-                        FileUtils.writeStringToFile(resultFile, delimiter, charset1, true);
-                    }
+                    FileUtils.writeStringToFile(resultFile, delimiter, charset1, true);
                     FileUtils.writeStringToFile(resultFile, record, charset1, true);
+
                     i.getAndIncrement();
+
+                    Person614 person614 = FixedByteLengthFileParser.parseLine(record, Person614.class);
+                    FileUtils.writeStringToFile(parseResultFile, person614.toString() + "\n", charset1, true);
+
+                    FileUtils.writeStringToFile(parseResultWriteFile, delimiter, charset1, true);
+                    String str = FixedLengthFileWriter.convertToFixedLengthString(person614);
+                    FileUtils.writeStringToFile(parseResultWriteFile, str + "\r\n", charset1, true);
+
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
                 // 例如，你可以在这里将数据写入数据库或其他处理
-            }, delimiter);
+            });
 
+            System.out.println("total lines:" + i);
             boolean areEqual = FileUtils.contentEquals(oriFile, resultFile);
             if (areEqual) {
                 System.out.println("The files are identical.");
             } else {
-                System.out.println("The files are not identical.");
+                System.err.println("The files are not identical.");
             }
         } catch (IOException e) {
             e.printStackTrace();
